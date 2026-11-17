@@ -1,0 +1,101 @@
+
+import GoogleProvider from 'next-auth/providers/google';
+import { getServerSession, type Session } from 'next-auth';
+
+declare module 'next-auth' {
+  interface Session {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  }
+}
+
+const hasGoogleCredentials = !!process.env.GOOGLE_CLIENT_ID && !!process.env.GOOGLE_CLIENT_SECRET;
+
+const providers = hasGoogleCredentials
+  ? [
+      GoogleProvider({
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        authorization: {
+          params: {
+            scope: [
+              'openid',
+              'email',
+              'profile',
+              'https://www.googleapis.com/auth/gmail.readonly',
+              'https://www.googleapis.com/auth/gmail.modify',
+              'https://www.googleapis.com/auth/gmail.send',
+            ].join(' '),
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      }),
+    ]
+  : [];
+
+export const nextAuthConfig = {
+  providers,
+  callbacks: {
+    async jwt({ token, account }: { token: any; account: any }) {
+      if (account) {
+        token.accessToken = account.access_token;
+        token.refreshToken = account.refresh_token;
+        token.expiresAt = account.expires_at;
+      }
+      return token;
+    },
+    async session({ session, token }: { session: any; token: any }) {
+      session.accessToken = token.accessToken;
+      
+      return session;
+    },
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+  pages: {
+    
+    
+  },
+};
+
+
+
+// Wrapper for API routes to get session - returns demo user if no session
+export async function getUserOrDemo(request: Request) {
+  let session: Session | null = null;
+  try {
+    session = await getServerSession(nextAuthConfig);
+  } catch {
+    session = null;
+  }
+  
+  if (session?.user?.email) {
+    return {
+      user: session.user,
+      accessToken: session.accessToken,
+      isDemo: false,
+    };
+  }
+  
+  // Demo user - always available
+  return {
+    user: {
+      name: 'Demo User',
+      email: 'demo@example.com',
+    },
+    accessToken: null,
+    isDemo: true,
+  };
+}
+
+export { getServerSession };
+export const hasAuth = hasGoogleCredentials;
